@@ -123,6 +123,17 @@ def tts_node(script: Script, max_workers: int = 4) -> list[bytes]:
     logger.info(f"Converting script to audio using {max_workers} workers...")
 
     total = len(script.lines)
+    
+    # Handle empty script case
+    if total == 0:
+        raise ValueError("Script contains no lines to process")
+
+    # Validate required environment variables before starting TTS
+    if not os.getenv("VOLCENGINE_TTS_APPID") or not os.getenv("VOLCENGINE_TTS_ACCESS_TOKEN"):
+        raise ValueError(
+            "Missing required environment variables: VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_TOKEN must be set"
+        )
+
     tasks = [(i, line, total) for i, line in enumerate(script.lines)]
 
     # Use ThreadPoolExecutor for parallel TTS generation
@@ -133,12 +144,16 @@ def tts_node(script: Script, max_workers: int = 4) -> list[bytes]:
         for future in as_completed(futures):
             idx, audio = future.result()
             results[idx] = audio
-            if audio is None:
+            # Use `not audio` to catch both None and empty bytes
+            if not audio:
                 failed_indices.append(idx)
 
-    # Log failed lines
+    # Log failed lines with 1-based indices for user-friendly output
     if failed_indices:
-        logger.warning(f"Failed to generate audio for {len(failed_indices)}/{total} lines: indices {sorted(failed_indices)}")
+        logger.warning(
+            f"Failed to generate audio for {len(failed_indices)}/{total} lines: "
+            f"line numbers {sorted(i + 1 for i in failed_indices)}"
+        )
 
     # Collect results in order, skipping failed ones
     audio_chunks = []
