@@ -4,6 +4,14 @@
 
 PYTHON ?= python
 
+# Detect OS for Windows compatibility
+ifeq ($(OS),Windows_NT)
+    SHELL := cmd.exe
+    BASH := bash
+else
+    BASH := bash
+endif
+
 help:
 	@echo "DeerFlow Development Commands:"
 	@echo "  make config          - Generate local config files (aborts if config already exists)"
@@ -90,11 +98,21 @@ setup-sandbox:
 
 # Start all services in development mode (with hot-reloading)
 dev:
+ifeq ($(OS),Windows_NT)
+	@echo "Detected Windows - using Git Bash..."
+	@$(BASH) ./scripts/serve.sh --dev
+else
 	@./scripts/serve.sh --dev
+endif
 
 # Start all services in production mode (with optimizations)
 start:
+ifeq ($(OS),Windows_NT)
+	@echo "Detected Windows - using Git Bash..."
+	@$(BASH) ./scripts/serve.sh --prod
+else
 	@./scripts/serve.sh --prod
+endif
 
 # Start all services in daemon mode (background)
 dev-daemon:
