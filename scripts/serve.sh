@@ -47,6 +47,16 @@ killall -9 nginx 2>/dev/null || true
 ./scripts/cleanup-containers.sh deer-flow-sandbox 2>/dev/null || true
 sleep 1
 
+# ── Clean up stale run state from previous crash ──────────────────────────────
+# The LangGraph in-memory runtime persists run state in .langgraph_api.
+# If the server crashed, stale "running" runs will block the queue on restart
+# (n_running > 0 but active = 0). Remove the state directory to start fresh.
+# See: https://github.com/bytedance/deer-flow/issues/1087
+if [ -d "$REPO_ROOT/backend/.langgraph_api" ]; then
+    echo "Cleaning up stale LangGraph run state from previous session..."
+    rm -rf "$REPO_ROOT/backend/.langgraph_api"
+fi
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 
 echo ""
