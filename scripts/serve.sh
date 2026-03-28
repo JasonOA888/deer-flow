@@ -48,12 +48,15 @@ killall -9 nginx 2>/dev/null || true
 sleep 1
 
 # ── Clean up stale run state from previous crash ──────────────────────────────
-# The LangGraph in-memory runtime persists run state in .langgraph_api.
-# If the server crashed, stale "running" runs will block the queue on restart
-# (n_running > 0 but active = 0). Remove the state directory to start fresh.
+# If the server crashed, stale "running" runs may block the queue on restart
+# (n_running > 0 but active = 0). The Python checkpointer (async_provider.py)
+# handles stale checkpoint cleanup at the application level on startup.
+# For the dev-mode in-memory runtime, we reset the .langgraph_api store
+# only in --dev mode (the default), which is safe because it's ephemeral data.
+# In --prod mode we skip this — the checkpointer handles recovery.
 # See: https://github.com/bytedance/deer-flow/issues/1087
-if [ -d "$REPO_ROOT/backend/.langgraph_api" ]; then
-    echo "Cleaning up stale LangGraph run state from previous session..."
+if $DEV_MODE && [ -d "$REPO_ROOT/backend/.langgraph_api" ]; then
+    echo "Dev mode: resetting LangGraph in-memory store from previous session..."
     rm -rf "$REPO_ROOT/backend/.langgraph_api"
 fi
 

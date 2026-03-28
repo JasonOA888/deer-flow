@@ -110,43 +110,30 @@ async def _cleanup_sqlite_stale_runs(conn_str: str) -> int:
 
         stale_count = 0
         async with aiosqlite.connect(str(db_path)) as db:
-            # Find and count checkpoints with pending state (interrupted runs)
-            async with db.execute(
-                "SELECT COUNT(*) FROM checkpoint_writes"
-            ) as cursor:
-                row = await cursor.fetchone()
-                pending_writes = row[0] if row else 0
+            # Detect interrupted runs: checkpoint_writes with pending data
+            # that will never be consumed because the workers are gone.
+            # Delete these so the queue doesn't stall on restart.
+            for table in ("checkpoint_writes", "checkpoint_blobs"):
+                try:
+                    async with db.execute(f"SELECT COUNT(*) FROM {table}") as cursor:
+                        row = await cursor.fetchone()
+                        count = row[0] if row else 0
+                    if count > 0:
+                        await db.execute(f"DELETE FROM {table}")
+                        stale_count += count
+                        logger.info(
+                            "Removed %d stale records from %s", count, table
+                        )
+                except Exception:
+                    pass  # Table may not exist in all schemas
 
-            async with db.execute(
-                "SELECT COUNT(*) FROM checkpoint_blobs"
-            ) as cursor:
-                row = await cursor.fetchone()
-                pending_blobs = row[0] if row else 0
-
-            if pending_writes > 0 or pending_blobs > 0:
-                logger.info(
-                    "Found %d pending writes and %d blobs from previous session, "
-                    "these may indicate interrupted runs",
-                    pending_writes,
-                    pending_blobs,
-                )
-
-            # Check for checkpoints table and look for runs with
-            # channel values that indicate "running" status
-            try:
-                async with db.execute(
-                    "SELECT DISTINCT thread_id FROM checkpoints"
-                ) as cursor:
-                    threads = await cursor.fetchall()
-                    thread_count = len(threads)
-            except Exception:
-                thread_count = 0
-
-            if thread_count > 0:
-                logger.info(
-                    "Found %d threads in checkpointer. If the server was "
-                    "previously crashed, stale runs may block the queue.",
-                    thread_count,
+            if stale_count > 0:
+                await db.commit()
+                logger.warning(
+                    "Cleaned up %d stale checkpoint records from a previous crash. "
+                    "If issues persist, manually delete the checkpointer database "
+                    "file and restart.",
+                    stale_count,
                 )
 
         return stale_count
