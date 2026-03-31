@@ -110,6 +110,7 @@ def resolve_agent_factory(assistant_id: str | None):
     return make_lead_agent
 
 
+<<<<<<< HEAD
 def build_run_config(
     thread_id: str,
     request_config: dict[str, Any] | None,
@@ -145,10 +146,27 @@ def build_run_config(
         configurable["agent_name"] = normalized
 
     config: dict[str, Any] = {"configurable": configurable, "recursion_limit": 100}
+=======
+def build_run_config(thread_id: str, request_config: dict[str, Any] | None, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Build a RunnableConfig dict for the agent."""
+    config: dict[str, Any] = {"recursion_limit": 100}
+>>>>>>> a5c5661 (fix(gateway): prevent 400 error when client sends context with configurable)
     if request_config:
+        # LangGraph >= 0.6.0 introduced ``context`` as the preferred way to
+        # pass thread-level data and rejects requests that include both
+        # ``configurable`` and ``context``.  If the caller already sends
+        # ``context``, honour it and skip our own ``configurable`` dict.
+        if "context" in request_config:
+            config["context"] = request_config["context"]
+        else:
+            configurable = {"thread_id": thread_id}
+            configurable.update(request_config.get("configurable", {}))
+            config["configurable"] = configurable
         for k, v in request_config.items():
-            if k != "configurable":
+            if k not in ("configurable", "context"):
                 config[k] = v
+    else:
+        config["configurable"] = {"thread_id": thread_id}
     if metadata:
         config.setdefault("metadata", {}).update(metadata)
     return config
