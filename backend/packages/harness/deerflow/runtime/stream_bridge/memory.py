@@ -46,16 +46,28 @@ class MemoryStreamBridge(StreamBridge):
         queue = self._get_or_create_queue(run_id)
         entry = StreamEvent(id=self._next_id(run_id), event=event, data=data)
         try:
-            await asyncio.wait_for(queue.put(entry), timeout=_PUBLISH_TIMEOUT)
-        except TimeoutError:
+            queue.put_nowait(entry)
+        except asyncio.QueueFull:
             logger.warning("Stream bridge queue full for run %s — dropping event %s", run_id, event)
 
     async def publish_end(self, run_id: str) -> None:
+        # END sentinel must never be dropped — it is the only way subscribe()
+        # exits. Block (with periodic logging) until queue has space. Prevents
+        # resource leaks from hanging SSE connections and orphaned queues.
         queue = self._get_or_create_queue(run_id)
-        try:
-            await asyncio.wait_for(queue.put(END_SENTINEL), timeout=_PUBLISH_TIMEOUT)
-        except TimeoutError:
-            logger.warning("Stream bridge queue full for run %s — dropping END sentinel", run_id)
+        attempt = 0
+        while True:
+            try:
+                queue.put_nowait(END_SENTINEL)
+                return
+            except asyncio.QueueFull:
+                attempt += 1
+                if attempt % 10 == 1:
+                    logger.warning(
+                        "Stream bridge queue full for run %s — waiting to deliver END sentinel (attempt %d)",
+                        run_id, attempt,
+                    )
+                await asyncio.sleep(1.0)
 
     async def subscribe(
         self,
