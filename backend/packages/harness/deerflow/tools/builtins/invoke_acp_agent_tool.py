@@ -174,6 +174,10 @@ def build_invoke_acp_agent_tool(agents: dict) -> BaseTool:
         args = agent_config.args or []
         physical_cwd = _get_work_dir(thread_id)
         mcp_servers = _build_mcp_servers()
+        # ACP NewSessionRequest expects mcp_servers as a list, but
+        # _build_mcp_servers returns a dict from DeerFlow's internal config.
+        # Convert to list format to avoid validation errors (see issue #1733).
+        mcp_servers_for_acp = list(mcp_servers.values()) if isinstance(mcp_servers, dict) else mcp_servers
         agent_env: dict[str, str] | None = None
         if agent_config.env:
             agent_env = {k: (os.environ.get(v[1:], "") if v.startswith("$") else v) for k, v in agent_config.env.items()}
@@ -188,7 +192,7 @@ def build_invoke_acp_agent_tool(agents: dict) -> BaseTool:
                     client_capabilities=ClientCapabilities(),
                     client_info=Implementation(name="deerflow", title="DeerFlow", version="0.1.0"),
                 )
-                session_kwargs: dict[str, Any] = {"cwd": physical_cwd, "mcp_servers": mcp_servers}
+                session_kwargs: dict[str, Any] = {"cwd": physical_cwd, "mcp_servers": mcp_servers_for_acp}
                 if agent_config.model:
                     session_kwargs["model"] = agent_config.model
                 session = await conn.new_session(**session_kwargs)
