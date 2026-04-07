@@ -205,6 +205,39 @@ class LocalSandbox(Sandbox):
 
         return pattern.sub(replace_match, command)
 
+    def _resolve_paths_in_content(self, content: str) -> str:
+        """Resolve container paths to local paths in arbitrary file content.
+
+        Unlike ``_resolve_paths_in_command`` which uses shell-aware boundary
+        characters, this method treats the content as plain text and resolves
+        every occurrence of a container path prefix.  Resolved paths are
+        normalized to forward slashes to avoid backslash-escape issues on
+        Windows hosts (e.g. ``C:\\Users\\..`` breaking Python string literals).
+
+        Args:
+            content: File content that may contain container paths.
+
+        Returns:
+            Content with container paths resolved to local paths (forward slashes).
+        """
+        import re
+
+        sorted_mappings = sorted(self.path_mappings, key=lambda m: len(m.container_path), reverse=True)
+        if not sorted_mappings:
+            return content
+
+        patterns = [re.escape(m.container_path) + r"(?=/|$|[^\w./-])(?:/[^\s\"';&|<>()]*)?" for m in sorted_mappings]
+        pattern = re.compile("|".join(f"({p})" for p in patterns))
+
+        def replace_match(match: re.Match) -> str:
+            matched_path = match.group(0)
+            resolved = self._resolve_path(matched_path)
+            # Normalize to forward slashes so that Windows backslash paths
+            # don't create invalid escape sequences in source files.
+            return resolved.replace("\\", "/")
+
+        return pattern.sub(replace_match, content)
+
     @staticmethod
     def _get_shell() -> str:
         """Detect available shell executable with fallback."""
@@ -297,8 +330,8 @@ class LocalSandbox(Sandbox):
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
             # Resolve container paths in content to local paths
-            # so that written files use correct system paths when executed
-            resolved_content = self._resolve_paths_in_command(content)
+            # using the content-specific resolver (forward-slash safe)
+            resolved_content = self._resolve_paths_in_content(content)
             mode = "a" if append else "w"
             with open(resolved_path, mode, encoding="utf-8") as f:
                 f.write(resolved_content)
