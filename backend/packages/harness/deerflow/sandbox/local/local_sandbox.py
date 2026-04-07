@@ -280,7 +280,10 @@ class LocalSandbox(Sandbox):
         resolved_path = self._resolve_path(path)
         try:
             with open(resolved_path, encoding="utf-8") as f:
-                return f.read()
+                content = f.read()
+            # Reverse resolve local paths back to container paths in content
+            # for consistency with bash tool output path handling
+            return self._reverse_resolve_paths_in_output(content)
         except OSError as e:
             # Re-raise with the original path for clearer error messages, hiding internal resolved paths
             raise type(e)(e.errno, e.strerror, path) from None
@@ -293,9 +296,12 @@ class LocalSandbox(Sandbox):
             dir_path = os.path.dirname(resolved_path)
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
+            # Resolve container paths in content to local paths
+            # so that written files use correct system paths when executed
+            resolved_content = self._resolve_paths_in_command(content)
             mode = "a" if append else "w"
             with open(resolved_path, mode, encoding="utf-8") as f:
-                f.write(content)
+                f.write(resolved_content)
         except OSError as e:
             # Re-raise with the original path for clearer error messages, hiding internal resolved paths
             raise type(e)(e.errno, e.strerror, path) from None
