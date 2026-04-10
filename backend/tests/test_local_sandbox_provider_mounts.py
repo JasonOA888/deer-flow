@@ -402,8 +402,8 @@ class TestLocalSandboxProviderMounts:
         # Must not contain backslashes that could break escape sequences
         assert "\\" not in written.split("DATA_DIR = ")[1].split("\n")[0]
 
-    def test_read_file_reverse_resolves_local_paths_in_content(self, tmp_path):
-        """read_file should convert local paths back to container paths."""
+    def test_read_file_reverse_resolves_local_paths_in_agent_written_files(self, tmp_path):
+        """read_file should convert local paths back to container paths in agent-written files."""
         data_dir = tmp_path / "data"
         data_dir.mkdir()
 
@@ -413,12 +413,30 @@ class TestLocalSandboxProviderMounts:
                 PathMapping(container_path="/mnt/data", local_path=str(data_dir)),
             ],
         )
-        # Write a file with the local path directly
-        (data_dir / "info.txt").write_text(f"File located at: {data_dir}/info.txt")
+        # Use write_file so the path is tracked as agent-written
+        sandbox.write_file("/mnt/data/info.txt", "File located at: /mnt/data/info.txt")
 
         content = sandbox.read_file("/mnt/data/info.txt")
         assert "/mnt/data/info.txt" in content
-        assert str(data_dir) not in content
+
+    def test_read_file_does_not_reverse_resolve_non_agent_files(self, tmp_path):
+        """read_file should NOT rewrite paths in user-uploaded or external files."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        sandbox = LocalSandbox(
+            "test",
+            [
+                PathMapping(container_path="/mnt/data", local_path=str(data_dir)),
+            ],
+        )
+        # Write directly to filesystem (simulates user upload or external tool output)
+        local_path = str(data_dir).replace("\\", "/")
+        (data_dir / "config.yml").write_text(f"output_dir: {local_path}/outputs")
+
+        content = sandbox.read_file("/mnt/data/config.yml")
+        # Content should be returned as-is, NOT reverse-resolved
+        assert local_path in content
 
     def test_write_then_read_roundtrip(self, tmp_path):
         """Container paths survive a write → read roundtrip."""

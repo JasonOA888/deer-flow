@@ -62,6 +62,9 @@ class LocalSandbox(Sandbox):
         """
         super().__init__(id)
         self.path_mappings = path_mappings or []
+        # Track files written through write_file so read_file only
+        # reverse-resolves paths in agent-authored content.
+        self._agent_written_paths: set[str] = set()
 
     def _is_read_only_path(self, resolved_path: str) -> bool:
         """Check if a resolved path is under a read-only mount.
@@ -314,9 +317,13 @@ class LocalSandbox(Sandbox):
         try:
             with open(resolved_path, encoding="utf-8") as f:
                 content = f.read()
-            # Reverse resolve local paths back to container paths in content
-            # for consistency with bash tool output path handling
-            return self._reverse_resolve_paths_in_output(content)
+            # Only reverse-resolve paths in files that were previously written
+            # by write_file (agent-authored content). User-uploaded files,
+            # external tool output, and other non-agent content should not be
+            # silently rewritten — see discussion on PR #1935.
+            if resolved_path in self._agent_written_paths:
+                content = self._reverse_resolve_paths_in_output(content)
+            return content
         except OSError as e:
             # Re-raise with the original path for clearer error messages, hiding internal resolved paths
             raise type(e)(e.errno, e.strerror, path) from None
@@ -335,6 +342,10 @@ class LocalSandbox(Sandbox):
             mode = "a" if append else "w"
             with open(resolved_path, mode, encoding="utf-8") as f:
                 f.write(resolved_content)
+            # Track this path so read_file knows to reverse-resolve on read.
+            # Only agent-written files get reverse-resolved; user uploads and
+            # external tool output are left untouched.
+            self._agent_written_paths.add(resolved_path)
         except OSError as e:
             # Re-raise with the original path for clearer error messages, hiding internal resolved paths
             raise type(e)(e.errno, e.strerror, path) from None
