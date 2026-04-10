@@ -376,7 +376,7 @@ class TestLocalSandboxProviderMounts:
         )
         sandbox.write_file(
             "/mnt/data/script.py",
-            f'import pathlib\npath = "/mnt/data/output"\nprint(path)',
+            'import pathlib\npath = "/mnt/data/output"\nprint(path)',
         )
         written = (data_dir / "script.py").read_text()
         # Container path should be resolved to local path (forward slashes)
